@@ -1,0 +1,198 @@
+---
+title: "Task 3 - Time Series"
+author: "Benjamin Wiriyapong"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Pre-processing
+
+In task 3, time series models of weather station data from **Hurn** and **Sheffield** in the UK is fitted and compared. The datasets contain information on the following variables:
+
+  * yyyy - Year
+  * mm - Month
+  * tmax - Mean daily maximum temperature
+  * tmin - Mean daily minimum temperature
+  * af - Days of air frost
+  * rain - Total rainfall
+  * sun - Total sunshine duration
+  
+First of all, let us import library as well as reading in datasets to our workspace. For this particular assignment we will work with **sun** variable for both Hurn and Sheffield. Then, **month** and **year** columns are combined into **dates** column. Next, **dates** is turned to timestamp.
+
+```{r message=FALSE}
+# install and import all libraries via pacman
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(stringr, lubridate, splitstackshape, ggplot2, zoo, ggfortify, 
+               latticeExtra, hrbrthemes, dplyr, rtsplot, xts, GGally, forecast,
+               extrafont, latex2exp, tseries)
+
+# read in dataset and fix column names
+hurn_df <- read.csv("hurn.txt", header = TRUE)
+hurn_df_colnames <- strsplit(gsub(x = names(hurn_df), pattern = "\\.+", 
+                    replacement = " "), " ")
+hurn_df <- cSplit(hurn_df, colnames(hurn_df), " ")
+colnames(hurn_df) <- hurn_df_colnames[[1]]
+hurn_df$sun <- gsub("[^0-9.]", "", hurn_df$sun)
+hurn_df$sun <- as.numeric(hurn_df$sun)
+hurn_df[hurn_df==""] <- NA
+hurn_df <- na.omit(hurn_df)
+
+sheffield_df <- read.csv("sheffield.txt", header = TRUE)
+sheffield_df_colnames <- strsplit(gsub(x = names(sheffield_df), 
+                         pattern = "\\.+", replacement = " "), " ")
+sheffield_df <- cSplit(sheffield_df, colnames(sheffield_df), " ")
+colnames(sheffield_df) <- sheffield_df_colnames[[1]]
+sheffield_df$sun <- as.numeric(sheffield_df$sun)
+
+# create ts objects
+hurn_df$dates <- as.Date(paste(hurn_df$yyyy, hurn_df$mm, "01", sep = "-"),
+                format = ("%Y-%m-%d"))
+hurn_df <- hurn_df[order(hurn_df$dates), ]
+hurn_ts <- ts(hurn_df[,"sun"], start = c(1968,12),frequency = 12)
+sheffield_df$dates <- as.Date(paste(sheffield_df$yyyy, sheffield_df$mm, "01", 
+                     sep = "-"), format = ("%Y-%m-%d"))
+sheffield_df <- sheffield_df[order(sheffield_df$dates), ]
+sheffield_ts <- ts(sheffield_df[,"sun"], start = c(1957,1), frequency = 12)
+```
+
+## ARIMA Modeling Steps
+In this report, time series is fitted in the following steps:
+1. Plot the time series data for both **Hurn** and **Sheffield**.
+2. Examine volatility by runing Box-Cox transformation to stabilize the variance.
+3. Examine seasonality in data. If they contain sesonality, take seasonal differencing. 
+4. If the data are non-stationary: take first differences of the data until the data are stationary 
+5. Estimate model parameters of (p,d,q) and (P,D,Q)S by examining the ACF/PACF.
+6. Select the models by use the AICC/BIC to search for the best performed model. 
+7. Check the residuals from your chosen model by plotting the ACF of the residuals, and doing a portmanteau test of the residuals. If they do not look like white noise, then the model is needed to be modified.
+8. Check whether residuals are normally distributed with mean zero and constant variance 
+
+## 1. Plot the time series data
+```{r  fig.cap = "Hurn series plot"}
+tsdisplay(hurn_ts)
+```
+
+It is claer that Hurn data are not stationary. It shows seasonality effect according to the plot.
+```{r}
+tsdisplay(sheffield_ts)
+```
+For Sheffield adta, it also shows seasonality in the series. As a result, this series is not stationary.
+
+## 2. Examine volatility 
+In this section, we apply Box-Cox transformation to find the best transformation technique to stabilise the variance. So, the variance of the series is constant for any lag.
+```{r}
+lambda <- BoxCox.lambda(hurn_ts)
+stab_var_hurn_ts <- BoxCox(hurn_ts, lambda=lambda)
+tsdisplay(stab_var_hurn_ts)
+lambda <- BoxCox.lambda(sheffield_ts)
+stab_var_sheffield_ts <- BoxCox(sheffield_ts, lambda=lambda)
+tsdisplay(stab_var_sheffield_ts)
+```
+## 3 Examine seasonality in data
+
+Augemented Dickey-Fuller test. Rejecting the null hypothesis suggests that a time series is stationary.
+```{r}
+no_season_stab_var_hurn_ts = diff(hurn_ts, differences = 12)
+plot.ts(no_season_stab_var_hurn_ts)
+#print(adf.test(stab_var_hurn_ts))
+no_season_stab_var_sheffield_ts = diff(sheffield_ts, differences = 12)
+plot.ts(no_season_stab_var_sheffield_ts)
+#adf.test(stab_var_sheffield_ts)
+```
+## 5. Estimate model parameters of (p,d,q) and (P,D,Q)S
+```{r hurn-acf-pacf-plots, fig.show="hold", out.width="50%" }
+acf(no_season_stab_var_hurn_ts)
+pacf(no_season_stab_var_hurn_ts)
+```
+
+
+```{r sheffield-acf-pacf-plots, fig.show="hold", out.width="50%" }
+acf(no_season_stab_var_sheffield_ts)
+pacf(no_season_stab_var_sheffield_ts)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###############################################################################
+## Data Visualisation and Data Exploration
+
+This section, we will visualise our data to see the behaviour of **sun duration** over time. 
+
+```{r paral-plots, fig.show="hold", out.width="50%" , fig.cap = "Sun duration in each month plot in Hurn(left) and Sheffield(right)"}
+ggseasonplot(hurn_ts, year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Durationn") +
+  ggtitle("Sun duration in Hurn plot")
+
+ggseasonplot(sheffield_ts, year.labels=TRUE, year.labels.left=TRUE) +
+  ylab("Duration") +
+  ggtitle("Sun duration in Sheffield plot")
+```
+From figure 1, We plot the entire datasets against each month of year. This is to inspect the effect of seasonality in our series. It can be seen that there are seasonality occurring in the datasets. Sun duration in Hurn are high towards mid year while Sheffield are high at the beginning and the towards the end of the year.
+
+
+```{r partial-plots, fig.show="hold", out.width="50%", message=FALSE, warning = FALSE, fig.cap = "Sun duration for last decade plot in Hurn(left) and Sheffield(right)"}
+ggplot(hurn_df, aes(x=dates, y=sun)) + geom_line(color="steelblue") + 
+  geom_point(color="steelblue") + theme_light() +
+  ggtitle("Sun duration in Hurn between 1995 and 2004") +
+  scale_x_date(limit=c(as.Date("1995-01-01"),as.Date("2004-12-01")))
+
+ggplot(sheffield_df, aes(x=dates, y=sun)) + geom_line(color="steelblue") + 
+  geom_point(color="steelblue") + theme_light() +
+  ggtitle("Sun duration in Sheffield between 1995 and 2004") +
+  scale_x_date(limit=c(as.Date("1995-01-01"),as.Date("2004-12-01")))
+```
+\newpage
+From figure 2, there is no obvious sign of increasing nor decreasing trend in the datasets. In addition, the volatility of both datasets seem to be stable.
+
+## Time series analysis
+
+```{r}
+hurn_ts %>% diff(lag=12) %>% ggtsdisplay()
+```
+
+
+```{r}
+sheffield_ts %>% diff(lag=12) %>% diff(lag=12) %>%  ggtsdisplay()
+```
+
+
