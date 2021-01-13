@@ -1,0 +1,164 @@
+
+---
+
+title:| 
+  | \vspace{5cm} \LARGE{My Title is really long and takes up several lines of text}
+  | \vspace{0.5cm} \Large{My Title is really long and takes up several lines of text}
+author:|
+| The author
+output: pdf_document
+fig_caption: yes
+---
+
+
+\clearpage
+\tableofcontents
+\clearpage
+
+```{r }
+#rticles
+# https://stackoverflow.com/questions/29532214/add-author-affiliation-in-r-markdown-beamer-presentation
+# https://stackoverflow.com/questions/29389149/add-image-in-title-page-of-rmarkdown-pdf
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	fig.align = "center",
+	fig.asp = 0.8,
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE,
+	out.width = "99%"
+)
+# document
+# http://rmarkdown.rstudio.com
+
+# import library
+if (!require('knitr')) install.packages('knitr'); library('knitr')
+if (!require('dplyr')) install.packages('dplyr'); library('dplyr') 
+if (!require('ggplot2')) install.packages('ggplot2'); library('ggplot2')
+if (!require('purrr')) install.packages('purrr'); library('purrr')
+if (!require('tidyr')) install.packages('tidyr'); library('tidyr')
+if (!require('reshape')) install.packages('reshape'); library('reshape')
+# read in table
+library(moderndive)
+library(gapminder)
+library(skimr)
+library(kableExtra)
+library(gridExtra)
+library(tidyverse)
+library(cluster)
+library(ggdendro)
+library(factoextra)
+
+set.seed(125)
+df <- read.csv('crime_data.csv')
+```
+
+# 1 Data Exploratory 
+
+Before any clustering can begin for this dataset, Figure 1 shows a boxplot illustrating the distribution of each datapoint representing the count of crime committed in each community with  the mean plotted as a light dot. We can see that the variables Theft, Narcotics and Battery all have outlier observations representing the different communities with significantly high counts of those types of crime. To overcome this issue, one method of clustering that will be used is hierarchical clustering; this will allow such data to be grouped and easily interpreted when the dendrogram plot is illustrated. 
+
+Although hierarchical clustering will help us illustrate correlations more easily, it does not always provide the best solutions. Using K-means alongside hierarchical will allow us to compute tighter clusters between observations and accepts clusters of different shapes and sizes such as elliptical clusters. 
+
+
+
+```{r, echo=FALSE}
+# read in table
+df <- read.csv('crime_data.csv')
+
+# set seed
+set.seed(125)
+# fix columnnames
+df = df %>% rename_all(function(x) gsub(" ", "_", x))
+df = df %>% rename_all(function(x) gsub("\\.", "_", x))
+# select year (2000+1)
+df = subset(df, Year==2002) 
+# select theft, narcotics, motor vehicle theft, battery, assault
+df = subset(df,select = c(Number_Community, Name_Community, Population, THEFT, NARCOTICS, MOTOR_VEHICLE_THEFT, BATTERY,
+                                    ASSAULT,Year))
+# make a copy of original dataset
+df_ <- df
+df.summary = subset(df,select = c(Name_Community, Population, THEFT, NARCOTICS, MOTOR_VEHICLE_THEFT, BATTERY,
+                                  ASSAULT))
+
+#Summary statistics 
+my_skim <- skim_with(numeric = sfl(hist = NULL))
+```
+
+```{r plot1, echo = FALSE, fig.cap="Boxplot showing the rate of selected crime committed over a number of communities. The blue dot illustrate the mean crime rate for each type of crime.", out.width="60%", fig.align = "center"}
+# melt data
+df = melt(df,id=c("Number_Community","Name_Community","Population","Year"))
+df = dplyr::rename(df, count = value)
+
+#Boxplot
+
+#colnames(df)[which(names(df) == "variable")] <- "Crime"
+
+df %>% 
+  ggplot(aes(x=variable ,y=count, fill=variable)) +
+  geom_boxplot(show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  geom_jitter(width=0.1,alpha=0.2) +
+  stat_summary(fun=mean, geom="point", size = 2, color = 5) +
+  xlab("Crime Committed") +
+  ylab("Count of Crime Committed")
+
+```
+```{r include=FALSE}
+
+
+clust_dt <- df_ %>% dplyr::select(
+  "ASSAULT", "BATTERY", "MOTOR_VEHICLE_THEFT", "NARCOTICS", "THEFT"
+)
+
+row.names(clust_dt) <- df_$Name_Community
+
+clust_dt.scale <-scale(clust_dt)
+
+clust_dist <- dist(clust_dt.scale)
+```
+
+
+
+
+# 2 Hierarchical Cluster
+
+Hierarchical clustering is also a kind of clustering algorithm, which creates a hierarchical nested clustering tree by calculating the similarity between data points of different categories. In a cluster tree, the original data points of different categories are the lowest level of the tree, and the top level of the tree is the root node of a cluster. There are two ways to create cluster trees: bottom-up aggregation and top-down splitting.
+
+Here we are using cluster from the bottom up. Height in the figure refers to the Euclidean distance between two clusters. We find the two clusters with the shortest distance each time, and then condense them into a large cluster until they all condense into one cluster.
+
+```{r , echo=FALSE, out.width="60%", fig.align = "center"}
+clust <- hclust(clust_dist,method = "complete") 
+ggdendrogram(clust , rotate = FALSE, size = 2)
+```
+
+The tree diagram plots each cluster and distance. We can use the tree diagram to find the clustering of any element we choose. In the tree below, it is easy to see where the first cluster (red), the second cluster (green), and the third cluster (blue) begin.
+
+```{r , echo=FALSE, out.width="60%", fig.align = "center"}
+fviz_dend(as.dendrogram(clust), rect = TRUE, k = 3)
+```
+
+# 3 K-Means
+
+K-means algorithm is an unsupervised machine learning technique used to partition observations into subgroups or clusters. In theory, we want observations in the same cluster to be similar (i.e., high intra-class similarity) while observations in different clusters to be as dissimilar as possible (i.e., low inter-class similarity). In k-means clustering, each cluster is represented by its center (i.e, centroid) which corresponds to the mean of points assigned to the cluster. Since there is no a response variable, the objective here is to try to find the number of cluster that minimises total distance.
+
+## 3.1 Optimal Clusters
+Since there was no prior knowledge on how many clusters would be our optimal numbers. Elbow plot was applied and main elbow occured at 4 suggesting 4 clusters.
+
+```{r , echo=FALSE, out.width="60%", fig.align = "center",fig.cap="Elbow plot shows total within sum of square from 1 to 10 clusters"}
+fviz_nbclust(clust_dt, kmeans, method = "wss")
+```
+
+## 3.2 Visualising K-Means Clusters
+
+It is a good idea to plot the cluster results because these can be used to assess the choice of the number of clusters.
+Now, let us visualise the data in a scatter plot with coloring each data point according to its cluster assignment.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, out.width="60%", fig.align = "center",fig.cap="Visualising clusters, K=4"}
+k4 <- kmeans(clust_dt, centers = 4, nstart = 25)
+fviz_cluster(k4, geom = "point",  data = clust_dt, ellipse.type = "norm", 
+             palette = "Set2", ggtheme = theme_minimal(), main="Plot Clusters, K = 4")
+```

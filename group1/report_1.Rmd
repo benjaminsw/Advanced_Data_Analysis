@@ -1,0 +1,76 @@
+---
+title: "Group 1 Ben"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	fig.align = "center",
+	fig.asp = 0.8,
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE,
+	out.width = "99%"
+)
+
+knitr::opts_chunk$set(echo = FALSE)
+# import library
+if (!require('knitr')) install.packages('knitr'); library('knitr')
+if (!require('dplyr')) install.packages('dplyr'); library('dplyr') 
+if (!require('tidyr')) install.packages('tidyr'); library('tidyr')
+if (!require('reshape')) install.packages('reshape'); library('reshape')
+if (!require('tidyverse')) install.packages('tidyverse'); library('tidyverse')
+if (!require('factoextra')) install.packages('factoextra'); library('factoextra')
+
+# prepare data
+set.seed(125)
+df = read.csv('crime_data.csv')
+df = df %>% rename_all(function(x) gsub(" ", "_", x))
+df = df %>% rename_all(function(x) gsub("\\.", "_", x))
+df = subset(df, Year==2002) 
+df = df[,c(1,2,3,4,6,7,19,20,32)]
+df = melt(df,id=c("Number_Community","Name_Community","Population","Year"))
+df = dplyr::rename(df, count = value)
+df$comm_crime <- paste(df$Name_Community, df$variable, sep = "-")
+df = df[,c("Population", "count", "comm_crime")]
+# scale
+df[!names(df) %in% c("comm_crime")] <- scale(df[!names(df) %in% c("comm_crime")])
+```
+
+# K-mean 
+
+K-means algorithm is an unsupervised machine learning technique used to partition observations into subgroups or clusters. In theory, we want observations in the same cluster to be similar (i.e., high intra-class similarity) while observations in different clusters to be as dissimilar as possible (i.e., low inter-class similarity). In k-means clustering, each cluster is represented by its center (i.e, centroid) which corresponds to the mean of points assigned to the cluster. Since there is no a response variable, the objective here is to try to find the number of cluster that minimises total distance.
+
+The standard algorithm is the Hartigan-Wong algorithm (1979), which defines the total within-cluster variation as the sum of squared distances Euclidean distances between items and the corresponding centroid
+
+## Determining Optimal Clusters
+As mentioned, the objective for K-menas algorithm is to find the optimal number of clusters. The Elbow plot was used find the optimal number of cluster.
+
+```{r , echo=FALSE, out.width="40%", fig.align = "center"}
+fviz_nbclust(df[!names(df) %in% c("comm_crime")], kmeans, method = "wss")
+```
+
+## Discussion
+It seems there is no clear cut. So, the "ratio" variable was introduced. The Ratio variable represent the ratio of crime rate over population in community. After ratio was introduce, Elbow plot was plotted again.     
+
+```{r, echo=FALSE}
+df$ratio <- df$count/df$Population
+fviz_nbclust(df[!names(df) %in% c("comm_crime")], kmeans, method = "wss")
+```
+
+## Select number of k
+Now, it is clearer that k=3 can separate clusters fairly good. 
+
+## Extracting Results
+With most of these approaches suggesting 3 as the number of optimal clusters, now we can extract the results using 3 clusters.
+
+### select 3
+```{r , echo=FALSE}
+k3 <- kmeans(df[!names(df) %in% c("comm_crime")], centers = 3, nstart = 25)
+fviz_cluster(k3, geom = "point",  data = df[!names(df) %in% c("comm_crime")], 
+             palette = "Set2", ggtheme = theme_minimal(), main="k = 3")
+```
+
+

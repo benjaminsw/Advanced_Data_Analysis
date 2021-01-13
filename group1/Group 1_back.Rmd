@@ -1,0 +1,252 @@
+---
+title: \vspace{5cm} \LARGE "The Relationship between Crime Types in the City of Chicago."
+author: |
+  | Ali Abdelazim
+  | Yuqing Bu
+  | Chloe Trendall
+  | Benjamin Wiriyapong
+  | Olivia Wise
+output: pdf_document
+fig_caption: yes
+---
+
+\clearpage
+\tableofcontents
+\clearpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	fig.align = "center",
+	fig.asp = 0.8,
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE,
+	out.width = "99%"
+)
+# document
+# http://rmarkdown.rstudio.com
+
+# Import required libraries
+if (!require('knitr')) install.packages('knitr'); library('knitr')
+if (!require('dplyr')) install.packages('dplyr'); library('dplyr') 
+if (!require('ggplot2')) install.packages('ggplot2'); library('ggplot2')
+if (!require('purrr')) install.packages('purrr'); library('purrr')
+if (!require('tidyr')) install.packages('tidyr'); library('tidyr')
+if (!require('reshape')) install.packages('reshape'); library('reshape')
+
+#Read in required libraries
+library(moderndive)
+library(gapminder)
+library(skimr)
+library(kableExtra)
+library(gridExtra)
+library(tidyverse)
+library(cluster)
+library(ggdendro)
+library(factoextra)
+library(GGally)
+library(tidyr)
+
+#Set the seed
+set.seed(125)
+
+#Read in the data
+df <- read.csv('crime_data.csv')
+```
+
+# Introduction
+
+Data from 2002-2015 from the Chicago Police Department (CPD) is available on all reported incidents of crime at from the 77 communities in Chicago. This report will be looking at a subset of this data from 2002 and specifically the crimes of theft, narcotics, motor vehicle theft, battery and assault. These crimes will be used to investigate the question of interest: which communities are similar in terms of their levels of crime? This will be answered through clustering. From this we will explore the relationship between different types of crime in Chicago. Clustering communities by levels of crime can help answer questions regarding Levels of crime have an impact on house prices. By clustering communities by similar crime rates we will be able to see what areas will be similar in terms of house prices. The question will be answered through clustering techniques and the clustering techniques will be compared to see what one is the best method in answering the question. 
+
+Each community within Chicago had a different population size so before any analysis was conducted the counts of crime were converted to rates of crime per 10,000 people by dividing the crime counts for each crime by the population size for the community, and multiplying this by 10,000. Crimes between communities could then be compared on a common scale.
+
+
+
+# Exploratory Analysis
+
+Before any clustering was carried out exploratory analysis was conducted. Figure 1 shows a box plot of crime rates for each crime. Each data point represents a community of Chicago and the mean crime rate across all the communities is plotted as a blue dot. Battery appears to have the widest range of crime rates and the highest mean crime rate, whilst crime rates for motor vehicle theft and assault are closer to the mean across the communities. This shows that communities within Chicago tend to have similar crime rates for motor vehicle theft and assault, whilst crime rates for battery vary more. Theft appears to have outlying observations which shows that certain communities have a significantly high count of this crime type compared to other communuties in Chicago. 
+
+
+```{r, echo=FALSE}
+
+#EDITING THE DATAFRAME
+
+# Fix column names
+df = df %>% rename_all(function(x) gsub(" ", "_", x))
+df = df %>% rename_all(function(x) gsub("\\.", "_", x))
+
+#SUBSETTING THE DATA
+
+# Select year (2002)
+df = subset(df, Year==2002) 
+# select theft, narcotics, motor vehicle theft, battery, assault
+df = subset(df,select = c(Number_Community, Name_Community, Population, THEFT, NARCOTICS, MOTOR_VEHICLE_THEFT, BATTERY,
+                                    ASSAULT,Year))
+# Make a copy of original data set
+#set them to be ratios of population * 10000 to get the number per 10000 people to keep consistency
+df_ <- df
+df_$THEFT <- round((df_$THEFT/df_$Population)*10000)
+df_$NARCOTICS <- round((df_$NARCOTICS/df_$Population)*10000)
+df_$MOTOR_VEHICLE_THEFT <- round((df_$MOTOR_VEHICLE_THEFT/df_$Population)*10000)
+df_$BATTERY <- round((df_$BATTERY/df_$Population)*10000)
+df_$ASSAULT <- round((df_$ASSAULT/df_$Population)*10000)
+
+df.summary = subset(df,select = c(Name_Community, Population, THEFT, NARCOTICS, MOTOR_VEHICLE_THEFT, BATTERY,
+                                  ASSAULT))
+
+#Summary Statistics 
+my_skim <- skim_with(numeric = sfl(hist = NULL))
+```
+
+```{r plot1, echo = FALSE, fig.cap="Boxplot of Crime Rate per 10,000 for Each Crime. The blue dot illustrate the mean crime rate for each type of crime.", out.width="60%", fig.align = "center"}
+# Melt the data
+df = melt(df,id=c("Number_Community","Name_Community","Population","Year"))
+df = dplyr::rename(df, count = value)
+df$Ratio = df$count / df$Population
+
+#Boxplot of crime rates for each crime
+
+df %>% 
+  ggplot(aes(x=variable ,y=Ratio, fill=variable)) +
+  geom_boxplot(show.legend = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") +
+  scale_x_discrete(labels= c("Theft", "Narcotics", "Motor Vehicle Theft", "Battery", "Assault")) +
+  geom_jitter(width=0.1,alpha=0.2) +
+  stat_summary(fun=mean, geom="point", size = 2, color = 5) +
+  xlab("Crime Type") +
+  ylab("Crime Rate per 10,000")
+
+```
+
+A pairs plot was plotted to assess if crimes were correlated with each other, shown in Figure 2. There are strong correlations between the crimes battery and assault, battery and narcotics, battery and motor vehicle theft and assault and motor vehicle theft. This helps us to understand the relationships between different crimes within the communities. For example, if a community had a high number of assaults then that same community would likely contain high numbers of battery related crimes.
+
+```{r pairs, echo=FALSE,out.width="60%", fig.cap="Pairs plot showing the correlation between the types of crime within the communities in Chicago "}
+#Pairs plot to assess correlation between crimes
+par(mar= c(1,1,1,1)) 
+df.pairs = subset(df_, select=c(Population, THEFT, NARCOTICS, MOTOR_VEHICLE_THEFT, BATTERY, ASSAULT))
+colnames(df.pairs)[which(names(df.pairs) == "MOTOR.VEHICLE.THEFT")] <- "VEHICLE THEFT"
+ggpairs(df.pairs)
+```
+
+
+```{r include=FALSE}
+#Apply clustering
+clust_dt <- df_ %>% dplyr::select(
+  "ASSAULT", "BATTERY", "MOTOR_VEHICLE_THEFT", "NARCOTICS", "THEFT"
+)
+
+row.names(clust_dt) <- df_$Name_Community
+
+clust_dt.scale <-scale(clust_dt)
+
+clust_dist <- dist(clust_dt.scale)
+```
+
+
+# Formal Analysis
+
+Clustering is an unsupervised machine learning technique used to partition observations into subgroups or clusters. By clustering, observations in the same groups are more similar to other observations in the same group (i.e. have a high intra-class similarity) and dissimilar to observations in other groups (i.e. have a low inter-class similarity). The group of similar data points is called a 'cluster'. The methods of clustering that will be used to answer the question of interest are hierarchical clustering and K-means clustering. These will be used to cluster the communities of the City of Chicago so communities in the same clusters will have similar crime rates to each other.
+
+## Hierarchical Clustering
+
+Hierarchical clustering creates a hierarchical nested clustering tree by calculating the similarity between data points of different categories. Hierarchical clustering is divided into two types: Divisive and Agglomerative. 
+
+Agglomerative clustering is used for this analysis. This is where each data point begins as an individual cluster. Similar clusters are merged at each step until all observations are in one cluster. To decide which clusters should be combined a measure of dissimilarity between sets of observations is used, such as a measure of distance between pairs of observations. A linkage criterion is also used to specify the dissimilarity of sets as a function of the pairwise distances of observations in the sets. Here, complete linkage is used. This is where two clusters are merged with the smallest maximum pairwise distance. The result of this method is a dendrogram.  
+
+A dendrogram is a visualisation of a distance matrix and a way to visualise hierarchical clustering. Figure 3 shows the resulting dendogram from agglomerative clustering using complete linkage on the data set. Looking at this figure it appears that there are 3 clusters in the data. Each colour represents a cluster. It is easy to see where the first cluster (red), the second cluster (green), and the third cluster (blue) begin. It could be argued that 2 clusters would be appropriate as one community is in a cluster on its own.
+
+```{r , echo=FALSE, out.width="60%", fig.cap=" Dendogram of Complete Linkage",  fig.align = "center"}
+#Dendogram for hierarchical clustering
+clust <- hclust(clust_dist,method = "complete") 
+fviz_dend(as.dendrogram(clust), rect = TRUE, k = 3) +
+  ggtitle("")
+
+```
+
+
+## K-Means Clustering
+
+The goal of k-means is to find k groups in the data. K-means clustering attempts to find the assignment of observations to a fixed number of clusters K, that minimises the sum over all clusters of the sum of squares within clusters.
+
+Firstly, k number of centroids are selected, then each observation is assigned to its closest centroid. New centroids are then computed as the average of all observations in a cluster and then each observation is assigned to its closest centroid. This is repeated until the observations are not reassigned or the maximum number of iterations is reached. So in k-means clustering each cluster is represented by its center (i.e, centroid) which corresponds to the mean of points assigned to the cluster. 
+
+To determine the “optimal” number of clusters for k-means an elbow plot was used, shown in Figure 4. The main elbow occurred at 4 suggesting k = 4 clusters would be suitable for this data. This is the number of clusters used for the analysis.
+
+```{r , echo=FALSE, out.width="60%", fig.cap="K-means elbow plot",  fig.align = "center"}
+#Elbow plot for k-means clustering to determine the optimal number of clusters
+
+fviz_nbclust(clust_dt, kmeans, method = "wss") +
+  ggtitle("")
+
+#Main elbow occurs at k = 4, suggesting 4 clusters is appropriate
+```
+
+Figure 5 shows a visualization of the k-means clustering to assess the choice of the number of clusters. It could be argued that 3 clusters could be appropriate for this data. From the plot it can be seen that there are very few observations in cluster 2, and these observations are close to the observations in cluster 1.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, out.width="60%", fig.cap="Visualisation of k-means clustering",  fig.align = "center"}
+
+#Visualisation of k-means clustering
+
+k4 <- kmeans(clust_dt, centers = 4, nstart = 25)
+fviz_cluster(k4, geom = "point",  data = clust_dt, ellipse.type = "norm", 
+            ggtheme = theme_minimal(), main="k = 4")
+```
+
+# Discussion of Results
+
+## Comparing Hierarchical and K-Means Clustering Methods
+
+To compare the clustering methods, silhouette plots were created, shown in Figure 5. The silhouette value measures how similar an object is to its own cluster by comparing to the other clusters. It ranges from -1 to 1, where a high value indicates an object has matched well to its own cluster and not to other clusters and thus means a "good" clustering fit. The width of the silhouette is defined as:
+
+$$s_i=\frac{(b_i-a_i)}{\max\{a_i,b_i\}}$$
+
+where $a_i$ is the average distance between observation $i$ and the other observations in $i$'s cluster, $b_i$ is the minimum average distance between observation $i$ and the observations in other clusters.
+
+
+```{r sil1, echo=FALSE, fig.cap="Silhouette plot for hierarchical (left) and k-means (right) clustering",out.width="50%",fig.width=3, fig.height=3,fig.show="hold",fig.align="centre"}
+
+#Silhouette plots for hierarchical and k-means clustering
+
+par(mar=c(4,4,.1,.1))
+hccut <- hcut(clust_dt.scale,k=3,hc_method="complete") #does the same as above but just keeps the k=3 there
+fviz_silhouette(hccut, print.summary = FALSE)
+
+sil.km <- silhouette(k4$cluster, dist(df_[,c(4,5,6,7,8)]))
+fviz_silhouette(sil.km, print.summary = FALSE)
+
+```
+
+From Figure 5 and the average silhouette width it appears that for this data set that k-means clustering is favorable over the hierarchical clustering as it has a larger silhouette width. The average silhouette width for hierarchical clustering was 0.50 and the k-means value was 0.54. Also, the lack of negative Si values for k-means indicates that each observation is in the most suitable cluster given the clustering assignment. This is not true for hierarchical clustering, which suggests that some observations belong in alternative clusters under this clustering method. The difference in the silhouette widths isn't huge so either could be said to be a good technique, however the one that will be used for further analysis will be the k-means technique. In both methods of clustering the community Austin was the only community found by itself in one cluster as it didn't reflect the rest of the cluster trends.
+
+```{r result, echo=FALSE}
+
+#Table of average counts of each crime and population for each cluster
+k4new <- df_
+k4new$cluster <- k4$cluster
+clust1 <- subset(k4new, k4new$cluster==1)
+clust2 <- subset(k4new, k4new$cluster==2)
+clust3 <- subset(k4new, k4new$cluster==3)
+clust4 <- subset(k4new, k4new$cluster==4)
+tablevalues1 <- c(mean(clust1$Population),mean(clust1$THEFT),mean(clust1$NARCOTICS),mean(clust1$MOTOR_VEHICLE_THEFT),mean(clust1$BATTERY),mean(clust1$ASSAULT))
+tablevalues2 <- c(mean(clust2$Population),mean(clust2$THEFT),mean(clust2$NARCOTICS),mean(clust2$MOTOR_VEHICLE_THEFT),mean(clust2$BATTERY),mean(clust2$ASSAULT))
+tablevalues3 <- c(mean(clust3$Population),mean(clust3$THEFT),mean(clust3$NARCOTICS),mean(clust3$MOTOR_VEHICLE_THEFT),mean(clust3$BATTERY),mean(clust3$ASSAULT))
+tablevalues4 <- c(mean(clust4$Population),mean(clust4$THEFT),mean(clust4$NARCOTICS),mean(clust4$MOTOR_VEHICLE_THEFT),mean(clust4$BATTERY),mean(clust4$ASSAULT))
+tablev <- data.frame(tablevalues1,tablevalues2,tablevalues3,tablevalues4)
+rownames(tablev) <- c("Population Average", "Average Theft Count", "Average Narcotics Count","Average Vehicle Theft Count","Average Battery Count", "Average Assault Count")
+colnames(tablev) <- c("Cluster 1","Cluster 2","Cluster 3","Cluster 4")
+knitr::kable(tablev,caption = "Average Crime Numbers for Each Cluster")
+
+```
+
+Table 1 above shows the average count data for each of the clusters as well as the average population using k-means clustering. The crime count per 10,000 people was found first for each and then multiplied up to the average population for that cluster to illustrate the average expected number of reported criminal incidents for each cluster.
+
+## Limitations
+
+# Conclusion
+
+In conclusion, two different clustering methods were applied to the Chicago Police Department data to try and capture the various relationships between crime types in the communities. Due to the variety of population sizes across the 77 communities, the number of crime incidents per 10,000 people was found for each community and crime type. This was to prevent any bias caused by difference in populations. The Hierarchical method found three distinct clusters with an average silhouette width of 0.5, while the K-Means method rose just above it with an average width of 0.54 and four distinct clusters. For the 3rd cluster in each method, Austin was the only community in that cluster due to it having a very different combination of crime counts as the others. After selecting K-Means to be the chosen clustering method for this data set, a table was made to help illustrate the general trends for each cluster with the average population of that cluster with the adjacent crime count for it. From this it is clear that there is no obvious relationships between all of them but that different combinations of all 5 of the crime types that were looked at is what clusters them together. In future, if there is a new community added to the data set, the Chicago Police Department might want to look at the number of crime incidents and fit it into one of the four clusters and make assumptions from there.
+
+\newpage
+
+# Appendix

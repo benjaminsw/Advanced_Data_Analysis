@@ -1,0 +1,89 @@
+
+---
+title: "hclust"
+output: pdf_document
+
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	fig.align = "center",
+	fig.asp = 0.8,
+	message = FALSE,
+	warning = FALSE,
+	cache = FALSE,
+	out.width = "99%"
+)
+```
+
+
+```{r include=FALSE}
+library(tidyverse)
+library(cluster)
+library(ggdendro)
+library(factoextra)
+set.seed(125)
+crime_data <- read.csv('crime_data.csv')
+
+crime_data <- crime_data %>% dplyr::select(
+  Number_Community, Name_Community, Population, Year,
+  ASSAULT, BATTERY, MOTOR.VEHICLE.THEFT, NARCOTICS, THEFT
+) %>% filter(Year == 2002)
+
+
+sum(is.na(crime_data)) 
+
+clust_dt <- crime_data %>% dplyr::select(
+  ASSAULT, BATTERY, MOTOR.VEHICLE.THEFT, NARCOTICS, THEFT
+)
+
+row.names(clust_dt) <- crime_data$Name_Community
+
+clust_dt.scale <-scale(clust_dt)
+
+clust_dist <- dist(clust_dt.scale)
+```
+
+
+
+
+# Hierarchical Cluster
+
+Hierarchical clustering is also a kind of clustering algorithm, which creates a hierarchical nested clustering tree by calculating the similarity between data points of different categories. In a cluster tree, the original data points of different categories are the lowest level of the tree, and the top level of the tree is the root node of a cluster. There are two ways to create cluster trees: bottom-up aggregation and top-down splitting.
+
+Here we are using cluster from the bottom up. Height in the figure refers to the Euclidean distance between two clusters. We find the two clusters with the shortest distance each time, and then condense them into a large cluster until they all condense into one cluster.
+
+```{r , echo=FALSE, out.width="40%", fig.align = "center"}
+clust <- hclust(clust_dist,method = "complete") 
+ggdendrogram(clust , rotate = FALSE, size = 2)
+```
+
+The tree diagram plots each cluster and distance. We can use the tree diagram to find the clustering of any element we choose. In the tree below, it is easy to see where the first cluster (red), the second cluster (green), and the third cluster (blue) begin.
+
+```{r , echo=FALSE, out.width="40%", fig.align = "center"}
+fviz_dend(as.dendrogram(clust), rect = TRUE, k = 3)
+```
+
+# K-Means
+
+K-means algorithm is an unsupervised machine learning technique used to partition observations into subgroups or clusters. In theory, we want observations in the same cluster to be similar (i.e., high intra-class similarity) while observations in different clusters to be as dissimilar as possible (i.e., low inter-class similarity). In k-means clustering, each cluster is represented by its center (i.e, centroid) which corresponds to the mean of points assigned to the cluster. Since there is no a response variable, the objective here is to try to find the number of cluster that minimises total distance.
+
+## Optimal Clusters
+Since there was no prior knowledge on how many clusters would be our optimal numbers. Elbow plot was applied and main elbow occured at 4 suggesting 4 clusters.
+
+```{r , echo=FALSE, out.width="40%", fig.align = "center"}
+fviz_nbclust(clust_dt, kmeans, method = "wss")
+```
+
+### Visualising K-Means Clusters
+
+It is a good idea to plot the cluster results because these can be used to assess the choice of the number of clusters.
+Now, let us visualise the data in a scatter plot with coloring each data point according to its cluster assignment.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, out.width="40%", fig.align = "center"}
+k4 <- kmeans(clust_dt, centers = 4, nstart = 25)
+fviz_cluster(k4, geom = "point",  data = clust_dt, ellipse.type = "norm", 
+             palette = "Set2", ggtheme = theme_minimal(), main="k = 4")
+```

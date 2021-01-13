@@ -1,0 +1,80 @@
+---
+title: "Crime"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# document
+# http://rmarkdown.rstudio.com
+
+# import library
+if (!require('knitr')) install.packages('knitr'); library('knitr')
+if (!require('dplyr')) install.packages('dplyr'); library('dplyr') 
+if (!require('ggplot2')) install.packages('ggplot2'); library('ggplot2')
+if (!require('purrr')) install.packages('purrr'); library('purrr')
+if (!require('tidyr')) install.packages('tidyr'); library('tidyr')
+if (!require('reshape')) install.packages('reshape'); library('reshape')
+# if (!require('')) install.packages(''); library('')
+# if (!require('')) install.packages(''); library('')
+# if (!require('')) install.packages(''); library('')
+# if (!require('')) install.packages(''); library('')
+```
+
+
+## 1 Data Exploratory 
+
+Read in data and show a few columns and rows
+
+```{r, echo=FALSE}
+# read in table
+df = read.csv('crime_data.csv')
+# fix columnnames
+df = df %>% rename_all(function(x) gsub(" ", "_", x))
+# select year (2000+1)
+#print(colnames(df))
+df = subset(df, Year==2002) 
+kable(head(df[,1:7]), "simple", align = "c", row.names = FALSE)
+```
+
+## Including Plots
+
+distribution plot
+
+
+
+```{r pressure, echo=FALSE, message=FALSE}
+#options(repr.plot.width=20, repr.plot.height=20)
+df %>%
+  keep(is.numeric) %>%   #negate(is.numeric) to negate numeric which has one var
+  gather() %>% 
+  ggplot(aes(value)) +
+    facet_wrap(~ key, scales = "free") +
+    geom_histogram()
+```
+
+### selected variable: theft, narcotics, motor vehicle theft, battery, assault
+
+```{r, echo=FALSE}
+df <- df[,c(1,2,3,4,6,7,19,20,32)]
+df <- melt(df,id=c("Number_Community","Name_Community","Population","Year"))
+head(df, 10)
+#kable(head(df, "simple", align = "c", row.names = FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
